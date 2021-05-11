@@ -3,9 +3,9 @@ on: [push, pull_request]
 name: Build and test
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
+  build:
+    name: Build
+    runs-on: windows-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -20,8 +20,17 @@ jobs:
       - name: Run cargo check
         uses: actions-rs/cargo@v1
         continue-on-error: false
+        env:
+          RUSTFLAGS: '-C target-feature=+crt-static'
         with:
-          command: check
+          command: build
+          args: --release --target=x86_64-pc-windows-msvc
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: call_api_check
+          path: target/x86_64-pc-windows-msvc/release/call_api_check.exe
 
   test:
     name: Test Suite
