@@ -60,17 +60,23 @@ pub struct Cli {
     pub forward_args: Vec<String>,
 }
 
-impl Cli {
-    pub fn parsed() -> Self {
-        let app = parser();
-        let mut cli = Cli {
+impl Default for Cli {
+    fn default() -> Self {
+        Cli {
             host: String::from("localhost"),
             port: 5668,
             command: String::new(),
             insecure: false,
             timeout: 60,
             forward_args: Vec::new(),
-        };
+        }
+    }
+}
+
+impl Cli {
+    pub fn parsed() -> Self {
+        let app = parser();
+        let mut cli = Self::default();
         let matches = app.get_matches();
         if let Ok(port) = value_t!(matches, "port", u32) {
             cli.port = port;
