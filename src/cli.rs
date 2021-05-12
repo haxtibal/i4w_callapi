@@ -36,6 +36,13 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 .help("Ignore TLS certificate errors."),
         )
         .arg(
+            Arg::with_name("timeout")
+                .long("timeout")
+                .takes_value(true)
+                .required(false)
+                .help("Timeout in seconds to wait for a REST API response."),
+        )
+        .arg(
             Arg::with_name("ARGS")
                 .takes_value(true)
                 .multiple(true)
@@ -49,6 +56,7 @@ pub struct Cli {
     pub port: u32,
     pub command: String,
     pub insecure: bool,
+    pub timeout: u32,
     pub forward_args: Vec<String>,
 }
 
@@ -60,6 +68,7 @@ impl Cli {
             port: 5668,
             command: String::new(),
             insecure: false,
+            timeout: 60,
             forward_args: Vec::new(),
         };
         let matches = app.get_matches();
@@ -72,6 +81,9 @@ impl Cli {
         cli.insecure = matches.is_present("insecure");
         if let Some(forward_args) = matches.values_of("ARGS") {
             cli.forward_args = forward_args.map(|s| s.to_string()).collect();
+        }
+        if let Ok(timeout) = value_t!(matches, "timeout", u32) {
+            cli.timeout = timeout;
         }
         cli
     }
@@ -100,6 +112,8 @@ fn test_max_cli() {
             "--command",
             "Invoke-Foo",
             "--insecure",
+            "--timeout",
+            "30",
             "--",
             "-arg1",
             "1",
@@ -110,6 +124,7 @@ fn test_max_cli() {
     assert_eq!(value_t!(matches, "port", u32).unwrap(), 5668);
     assert_eq!(matches.value_of("command").unwrap(), "Invoke-Foo");
     assert_eq!(matches.is_present("insecure"), true);
+    assert_eq!(value_t!(matches, "timeout", u32).unwrap(), 30);
     let trail: Vec<&str> = matches.values_of("ARGS").unwrap().collect();
     assert_eq!(trail, ["-arg1", "1", "-arg2"]);
 }
