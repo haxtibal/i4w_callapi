@@ -6,7 +6,6 @@ use std::fmt;
 
 type EmptyObject = HashMap<(), ()>;
 
-pub type CommandArguments = IndexMap<String, Argument>;
 pub type CheckerResponseBody = HashMap<String, CheckerResult>;
 
 #[derive(PartialEq, Debug, Deserialize, Serialize)]
@@ -36,6 +35,35 @@ pub struct CheckerResult {
     pub exitcode: Exitcode,
     pub checkresult: String,
     pub perfdata: Perfdata,
+}
+
+#[derive(PartialEq, Debug, Deserialize, Serialize)]
+pub struct CommandArguments(IndexMap<String, Argument>);
+
+impl std::convert::From<&[String]> for CommandArguments {
+    fn from(args: &[String]) -> Self {
+        let mut command_map: IndexMap<String, Argument> = IndexMap::new();
+        let mut arg_value;
+
+        for idx in 0..args.len() {
+            if args[idx].starts_with('-') {
+                if idx + 1 < args.len() {
+                    let next_value = &args[idx + 1];
+                    if next_value.starts_with('-') {
+                        arg_value = Argument::DummyArgument(true);
+                    } else {
+                        arg_value = Argument::RealArgument(next_value.clone());
+                    }
+                } else {
+                    arg_value = Argument::DummyArgument(true);
+                }
+                command_map.insert(args[idx].replace("-", ""), arg_value);
+            } else {
+                continue;
+            }
+        }
+        CommandArguments(command_map)
+    }
 }
 
 impl Perfdata {
@@ -93,9 +121,78 @@ impl IcingaTermination for CheckerResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{Argument, CheckerResult, EmptyObject, Exitcode, Perfdata};
+    use super::{Argument, CheckerResult, CommandArguments, EmptyObject, Exitcode, Perfdata};
     use serde_json;
     use std::collections::HashMap;
+
+    #[test]
+    fn test_commandarguments_from_into() {
+        let args = vec![String::from("-foo"), String::from("bar")];
+        let cmdargs = CommandArguments::from(&*args);
+        assert_eq!(
+            cmdargs.0.get("foo").unwrap(),
+            &Argument::RealArgument(String::from("bar"))
+        );
+
+        let cmdargs: CommandArguments = args.as_slice().into();
+        assert_eq!(
+            cmdargs.0.get("foo").unwrap(),
+            &Argument::RealArgument(String::from("bar"))
+        );
+    }
+
+    #[test]
+    fn test_serialize_commandarguments() {
+        // positional arguments are not supported
+        let args = vec![
+            String::from("foo"),
+            String::from("bar"),
+            String::from("baz"),
+        ];
+        let cmdargs = CommandArguments::from(args.as_slice());
+        assert_eq!(cmdargs.0.len(), 0);
+
+        // parameters with arguments are inserted as key value pairs
+        let args = vec![
+            String::from("-Warning"),
+            String::from("0"),
+            String::from("-Critical"),
+            String::from("1"),
+        ];
+        let cmdargs = CommandArguments::from(args.as_slice());
+        assert_eq!(cmdargs.0.len(), 2);
+        assert_eq!(
+            cmdargs.0.get("Warning").unwrap(),
+            &Argument::RealArgument(String::from("0"))
+        );
+        assert_eq!(
+            cmdargs.0.get("Critical").unwrap(),
+            &Argument::RealArgument(String::from("1"))
+        );
+
+        // switch arguments can be interleaved anywhere, fake value True is inserted
+        let args = vec![
+            String::from("-Warning"),
+            String::from("0"),
+            String::from("-switch"),
+            String::from("-Critical"),
+            String::from("1"),
+        ];
+        let cmdargs = CommandArguments::from(args.as_slice());
+        assert_eq!(cmdargs.0.len(), 3);
+        assert_eq!(
+            cmdargs.0.get("Warning").unwrap(),
+            &Argument::RealArgument(String::from("0"))
+        );
+        assert_eq!(
+            cmdargs.0.get("Critical").unwrap(),
+            &Argument::RealArgument(String::from("1"))
+        );
+        assert_eq!(
+            cmdargs.0.get("switch").unwrap(),
+            &Argument::DummyArgument(true)
+        );
+    }
 
     #[test]
     fn test_serialize_arglist() {
