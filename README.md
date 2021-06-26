@@ -29,7 +29,8 @@ Preparation: Setup Icinga for Windows and enable it for REST API checks. Not doc
 
 Compile - you can statically link the C runtime and get a self-contained binary for easy distribution.
 ```
-cargo build --target=x86_64-pc-windows-msvc -Ctarget-feature=+crt-static --release
+RUSTFLAGS="-C target-feature=+crt-static"
+cargo build --target=x86_64-pc-windows-msvc --release
 ```
 
 Copy the binary into the agents bin path, which defaults to `C:\Program Files\ICINGA2\sbin`.
