@@ -1,6 +1,7 @@
 mod cli;
 mod client;
 mod icinga;
+mod ps;
 mod restapiv1;
 
 use icinga::icinga_exit;

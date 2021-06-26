@@ -1,4 +1,5 @@
 use crate::icinga::{ExitCode, IcingaTermination};
+use crate::ps;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -37,12 +38,12 @@ pub struct CheckerResult {
     pub perfdata: Perfdata,
 }
 
-#[derive(PartialEq, Debug, Deserialize, Serialize)]
-pub struct CommandArguments(IndexMap<String, Argument>);
+#[derive(PartialEq, Debug, Serialize)]
+pub struct CommandArguments(IndexMap<String, ps::CliArgument>);
 
 impl std::convert::From<&[String]> for CommandArguments {
     fn from(args: &[String]) -> Self {
-        let mut command_map: IndexMap<String, Argument> = IndexMap::new();
+        let mut command_map: IndexMap<String, ps::CliArgument> = IndexMap::new();
         let mut arg_value;
 
         for idx in 0..args.len() {
@@ -50,12 +51,12 @@ impl std::convert::From<&[String]> for CommandArguments {
                 if idx + 1 < args.len() {
                     let next_value = &args[idx + 1];
                     if next_value.starts_with('-') {
-                        arg_value = Argument::DummyArgument(true);
+                        arg_value = ps::CliArgument::Bool(true);
                     } else {
-                        arg_value = Argument::RealArgument(next_value.clone());
+                        arg_value = ps::from_str(next_value).unwrap()
                     }
                 } else {
-                    arg_value = Argument::DummyArgument(true);
+                    arg_value = ps::CliArgument::Bool(true);
                 }
                 command_map.insert(args[idx].replace("-", ""), arg_value);
             } else {
@@ -122,6 +123,7 @@ impl IcingaTermination for CheckerResult {
 #[cfg(test)]
 mod tests {
     use super::{Argument, CheckerResult, CommandArguments, EmptyObject, Exitcode, Perfdata};
+    use crate::ps::{CliArgument, Number};
     use serde_json;
     use std::collections::HashMap;
 
@@ -131,13 +133,13 @@ mod tests {
         let cmdargs = CommandArguments::from(&*args);
         assert_eq!(
             cmdargs.0.get("foo").unwrap(),
-            &Argument::RealArgument(String::from("bar"))
+            &CliArgument::String("bar".to_owned())
         );
 
         let cmdargs: CommandArguments = args.as_slice().into();
         assert_eq!(
             cmdargs.0.get("foo").unwrap(),
-            &Argument::RealArgument(String::from("bar"))
+            &CliArgument::String("bar".to_owned())
         );
     }
 
@@ -163,11 +165,11 @@ mod tests {
         assert_eq!(cmdargs.0.len(), 2);
         assert_eq!(
             cmdargs.0.get("Warning").unwrap(),
-            &Argument::RealArgument(String::from("0"))
+            &CliArgument::Number(Number::PosInt(0))
         );
         assert_eq!(
             cmdargs.0.get("Critical").unwrap(),
-            &Argument::RealArgument(String::from("1"))
+            &CliArgument::Number(Number::PosInt(1))
         );
 
         // switch arguments can be interleaved anywhere, fake value True is inserted
@@ -182,16 +184,13 @@ mod tests {
         assert_eq!(cmdargs.0.len(), 3);
         assert_eq!(
             cmdargs.0.get("Warning").unwrap(),
-            &Argument::RealArgument(String::from("0"))
+            &CliArgument::Number(Number::PosInt(0))
         );
         assert_eq!(
             cmdargs.0.get("Critical").unwrap(),
-            &Argument::RealArgument(String::from("1"))
+            &CliArgument::Number(Number::PosInt(1))
         );
-        assert_eq!(
-            cmdargs.0.get("switch").unwrap(),
-            &Argument::DummyArgument(true)
-        );
+        assert_eq!(cmdargs.0.get("switch").unwrap(), &CliArgument::Bool(true));
     }
 
     #[test]
