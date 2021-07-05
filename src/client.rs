@@ -1,4 +1,5 @@
 use crate::restapiv1;
+use std::convert::TryFrom;
 use std::time::Duration;
 
 pub struct IcingaPsRestApiClient {
@@ -33,7 +34,7 @@ impl IcingaPsRestApiClient {
             .build()
             .unwrap()
             .post(url)
-            .json(&restapiv1::CommandArguments::from(args))
+            .json(&restapiv1::CommandArguments::try_from(args)?)
             .send()?;
 
         let body_data = response.json::<restapiv1::CheckerResponseBody>()?;

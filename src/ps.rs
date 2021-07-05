@@ -2,10 +2,22 @@ use serde::Serialize;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
-    InvalidSyntax,
+    LexerError,
+    ParserError,
 }
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Error::LexerError => write!(f, "failed to lex PowerShell syntax"),
+            Error::ParserError => write!(f, "failed to parse PowerShell syntax"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 #[derive(Debug, PartialEq, PartialOrd)]
 enum Token {
@@ -57,11 +69,12 @@ pub enum CliArgument {
 
 pub fn from_str(input: &str) -> Result<CliArgument> {
     let lexer = Lexer::from_str(input);
-    let tokens = lexer.lex();
+    let tokens = lexer.lex()?;
     let mut parser = Parser { input: &tokens };
     parser.parse_argument()
 }
 
+#[derive(Debug, PartialEq)]
 enum LexerState {
     Control,
     SingleQuote,
@@ -89,21 +102,23 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn lex(mut self) -> Vec<Token> {
+    pub fn lex(mut self) -> Result<Vec<Token>> {
         while !self.input.is_empty() {
-            match self.state {
+            if let Err(error) = match self.state {
                 LexerState::Control => self.scan_control(),
                 LexerState::SingleQuote => self.scan_singlequote(),
                 LexerState::DoubleQuote => self.scan_doublequote(),
                 LexerState::MaybeArrayOp => self.scan_maybearrayop(),
                 LexerState::ParanthesesCmd => self.scan_parantheses_cmd(),
+            } {
+                return Err(error);
             }
         }
         self.store_buf_as_token();
-        self.tokens
+        Ok(self.tokens)
     }
 
-    fn scan_control(&mut self) {
+    fn scan_control(&mut self) -> Result<()> {
         if let Some(peeked_char) = self.input.chars().next() {
             self.eat(1);
             if self.escaping {
@@ -136,9 +151,10 @@ impl<'a> Lexer<'a> {
                 self.buf.push(peeked_char);
             }
         }
+        Ok(())
     }
 
-    fn scan_singlequote(&mut self) {
+    fn scan_singlequote(&mut self) -> Result<()> {
         if let Some(peeked_char) = self.input.chars().next() {
             self.eat(1);
             if peeked_char == '\'' {
@@ -147,10 +163,13 @@ impl<'a> Lexer<'a> {
             } else {
                 self.buf.push(peeked_char);
             }
+            Ok(())
+        } else {
+            Err(Error::LexerError)
         }
     }
 
-    fn scan_doublequote(&mut self) {
+    fn scan_doublequote(&mut self) -> Result<()> {
         if let Some(peeked_char) = self.input.chars().next() {
             self.eat(1);
             if self.escaping {
@@ -164,10 +183,13 @@ impl<'a> Lexer<'a> {
             } else {
                 self.buf.push(peeked_char);
             }
+            Ok(())
+        } else {
+            Err(Error::LexerError)
         }
     }
 
-    fn scan_parantheses_cmd(&mut self) {
+    fn scan_parantheses_cmd(&mut self) -> Result<()> {
         if let Some(peeked_char) = self.input.chars().next() {
             self.eat(1);
             self.buf.push(peeked_char);
@@ -175,10 +197,13 @@ impl<'a> Lexer<'a> {
                 self.store_buf_as_token();
                 self.state = LexerState::Control;
             }
+            Ok(())
+        } else {
+            Err(Error::LexerError)
         }
     }
 
-    fn scan_maybearrayop(&mut self) {
+    fn scan_maybearrayop(&mut self) -> Result<()> {
         if let Some(peeked_char) = self.input.chars().next() {
             self.eat(1);
             if peeked_char == '(' {
@@ -188,6 +213,9 @@ impl<'a> Lexer<'a> {
                 self.buf.push(peeked_char);
             }
             self.state = LexerState::Control;
+            Ok(())
+        } else {
+            Err(Error::LexerError)
         }
     }
 
@@ -230,24 +258,20 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    /*
-       argument : array
-                | sequence_by_comma_op
-                | SKALAR'''
-    */
+    // argument : array
+    //          | sequence_by_comma_op
+    //          | SKALAR'''
     pub fn parse_argument(&mut self) -> Result<CliArgument> {
         self.parse_sequence_by_comma_op().or_else(|_| {
             self.parse_array()
-                .or_else(|_| self.parse_skalar().or(Err(Error::InvalidSyntax)))
+                .or_else(|_| self.parse_skalar().or(Err(Error::ParserError)))
         })
     }
 
-    /*
-       array : ARRAY_BEGIN sequence ARRAY_END
-             | ARRAY_OP sequence PARANTHESES_CLOSE
-             | ARRAY_OP PARANTHESES_CLOSE
-             | ARRAY_BEGIN ARRAY_END
-    */
+    // array : ARRAY_BEGIN sequence ARRAY_END
+    //       | ARRAY_OP sequence PARANTHESES_CLOSE
+    //       | ARRAY_OP PARANTHESES_CLOSE
+    //       | ARRAY_BEGIN ARRAY_END
     fn parse_array(&mut self) -> Result<CliArgument> {
         let backtrack = self.input;
         /*if self.parse_array_empty().is_ok() {
@@ -271,12 +295,10 @@ impl<'a> Parser<'a> {
             }
         }
         self.input = backtrack;
-        Err(Error::InvalidSyntax)
+        Err(Error::ParserError)
     }
 
-    /*
-        comma_op : element COMMA
-    */
+    // comma_op : element COMMA
     fn parse_comma_op(&mut self) -> Result<Vec<CliArgument>> {
         let backtrack = self.input;
         if let Ok(element) = self.parse_element() {
@@ -285,13 +307,11 @@ impl<'a> Parser<'a> {
             }
         }
         self.input = backtrack;
-        Err(Error::InvalidSyntax)
+        Err(Error::ParserError)
     }
 
-    /*
-        sequence_by_comma_op : comma_op
-                             | comma_op sequence
-    */
+    // sequence_by_comma_op : comma_op
+    //                      | comma_op sequence
     fn parse_sequence_by_comma_op(&mut self) -> Result<CliArgument> {
         let backtrack = self.input;
         if let Ok(mut sequence_by_comma_op) = self.parse_comma_op() {
@@ -301,15 +321,12 @@ impl<'a> Parser<'a> {
             Ok(CliArgument::Array(sequence_by_comma_op))
         } else {
             self.input = backtrack;
-            Err(Error::InvalidSyntax)
+            Err(Error::ParserError)
         }
     }
 
-    /*
-       Break recursion by collecting elements non recursively.
-       sequence : element
-                | element COMMA sequence"""
-    */
+    // sequence : element
+    //          | element COMMA sequence"""
     fn parse_sequence(&mut self) -> Result<Vec<CliArgument>> {
         let backtrack = self.input;
         if let Ok(element) = self.parse_element() {
@@ -327,20 +344,18 @@ impl<'a> Parser<'a> {
             Ok(sequence)
         } else {
             self.input = backtrack;
-            Err(Error::InvalidSyntax)
+            Err(Error::ParserError)
         }
     }
 
-    /*
-        element : skalar
-                | array
-    */
+    // element : skalar
+    //         | array
     fn parse_element(&mut self) -> Result<CliArgument> {
         let backtrack = self.input;
         self.parse_skalar().or_else(|_| {
             self.parse_array().map_err(|_| {
                 self.input = backtrack;
-                Error::InvalidSyntax
+                Error::ParserError
             })
         })
     }
@@ -354,14 +369,14 @@ impl<'a> Parser<'a> {
                     Ok(CliArgument::Number(Number::parse(number_token).unwrap()))
                 }
                 Token::Bool(bool_token) => Ok(CliArgument::Bool(bool_token)),
-                _ => Err(Error::InvalidSyntax),
+                _ => Err(Error::ParserError),
             } {
                 self.input = &self.input[1..];
                 return Ok(skalar);
             }
         }
         self.input = backtrack;
-        Err(Error::InvalidSyntax)
+        Err(Error::ParserError)
     }
 
     fn parse_newtype_token(&mut self, token: Token) -> Result<Token> {
@@ -371,7 +386,7 @@ impl<'a> Parser<'a> {
             return Ok(token);
         }
         self.input = backtrack;
-        Err(Error::InvalidSyntax)
+        Err(Error::ParserError)
     }
 }
 
@@ -397,17 +412,17 @@ mod test_lexer {
     fn test_lexer() {
         let input = "[]";
         let lexer = Lexer::from_str(input);
-        assert!(lexer.lex() == vec![Token::ArrayBegin, Token::ArrayEnd]);
+        assert!(lexer.lex().unwrap() == vec![Token::ArrayBegin, Token::ArrayEnd]);
         let input = "@()";
         let lexer = Lexer::from_str(input);
-        assert!(lexer.lex() == vec![Token::ArrayOpBegin, Token::ArrayOpEnd]);
+        assert!(lexer.lex().unwrap() == vec![Token::ArrayOpBegin, Token::ArrayOpEnd]);
         let input = "abc";
         let lexer = Lexer::from_str(input);
-        assert!(lexer.lex() == vec![Token::String("abc".to_owned())]);
+        assert!(lexer.lex().unwrap() == vec![Token::String("abc".to_owned())]);
         let input = "abc,123";
         let lexer = Lexer::from_str(input);
         assert!(
-            lexer.lex()
+            lexer.lex().unwrap()
                 == vec![
                     Token::String("abc".to_owned()),
                     Token::Comma,
@@ -416,11 +431,11 @@ mod test_lexer {
         );
         let input = "$False,$True";
         let lexer = Lexer::from_str(input);
-        assert!(lexer.lex() == vec![Token::Bool(false), Token::Comma, Token::Bool(true)]);
+        assert!(lexer.lex().unwrap() == vec![Token::Bool(false), Token::Comma, Token::Bool(true)]);
         let input = "[foo,123]";
         let lexer = Lexer::from_str(input);
         assert!(
-            lexer.lex()
+            lexer.lex().unwrap()
                 == vec![
                     Token::ArrayBegin,
                     Token::String("foo".to_owned()),
@@ -432,7 +447,7 @@ mod test_lexer {
         let input = r#"@("foo",123)"#;
         let lexer = Lexer::from_str(input);
         assert!(
-            lexer.lex()
+            lexer.lex().unwrap()
                 == vec![
                     Token::ArrayOpBegin,
                     Token::String("foo".to_owned()),
@@ -444,7 +459,7 @@ mod test_lexer {
         let input = r#""abc,123" , 'def,456'"#;
         let lexer = Lexer::from_str(input);
         assert!(
-            lexer.lex()
+            lexer.lex().unwrap()
                 == vec![
                     Token::String("abc,123".to_owned()),
                     Token::Comma,
@@ -453,7 +468,7 @@ mod test_lexer {
         );
         let input = r#"`"`'```[`]"#;
         let lexer = Lexer::from_str(input);
-        assert!(lexer.lex() == vec![Token::String(r#""'`[]"#.to_owned())]);
+        assert!(lexer.lex().unwrap() == vec![Token::String(r#""'`[]"#.to_owned())]);
     }
 }
 
