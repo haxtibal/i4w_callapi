@@ -41,8 +41,10 @@ pub struct CheckerResult {
 #[derive(PartialEq, Debug, Serialize)]
 pub struct CommandArguments(IndexMap<String, ps::CliArgument>);
 
-impl std::convert::From<&[String]> for CommandArguments {
-    fn from(args: &[String]) -> Self {
+impl std::convert::TryFrom<&[String]> for CommandArguments {
+    type Error = CommandArgumentsError;
+
+    fn try_from(args: &[String]) -> Result<Self, Self::Error> {
         let mut command_map: IndexMap<String, ps::CliArgument> = IndexMap::new();
         let mut arg_value;
 
@@ -53,7 +55,11 @@ impl std::convert::From<&[String]> for CommandArguments {
                     if next_value.starts_with('-') {
                         arg_value = ps::CliArgument::Bool(true);
                     } else {
-                        arg_value = ps::from_str(next_value).unwrap()
+                        arg_value =
+                            ps::from_str(next_value).map_err(|e| CommandArgumentsError {
+                                failed_arg: args[idx].clone(),
+                                reason: e,
+                            })?;
                     }
                 } else {
                     arg_value = ps::CliArgument::Bool(true);
@@ -63,9 +69,27 @@ impl std::convert::From<&[String]> for CommandArguments {
                 continue;
             }
         }
-        CommandArguments(command_map)
+        Ok(CommandArguments(command_map))
     }
 }
+
+#[derive(Debug)]
+pub struct CommandArgumentsError {
+    failed_arg: String,
+    reason: ps::Error,
+}
+
+impl std::fmt::Display for CommandArgumentsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "invalid value for argument '{}' ({})",
+            self.failed_arg, self.reason
+        )
+    }
+}
+
+impl std::error::Error for CommandArgumentsError {}
 
 impl Perfdata {
     fn valid(&self) -> bool {
@@ -126,17 +150,18 @@ mod tests {
     use crate::ps::{CliArgument, Number};
     use serde_json;
     use std::collections::HashMap;
+    use std::convert::{TryFrom, TryInto};
 
     #[test]
     fn test_commandarguments_from_into() {
         let args = vec![String::from("-foo"), String::from("bar")];
-        let cmdargs = CommandArguments::from(&*args);
+        let cmdargs = CommandArguments::try_from(&*args).unwrap();
         assert_eq!(
             cmdargs.0.get("foo").unwrap(),
             &CliArgument::String("bar".to_owned())
         );
 
-        let cmdargs: CommandArguments = args.as_slice().into();
+        let cmdargs: CommandArguments = args.as_slice().try_into().unwrap();
         assert_eq!(
             cmdargs.0.get("foo").unwrap(),
             &CliArgument::String("bar".to_owned())
@@ -151,7 +176,7 @@ mod tests {
             String::from("bar"),
             String::from("baz"),
         ];
-        let cmdargs = CommandArguments::from(args.as_slice());
+        let cmdargs = CommandArguments::try_from(args.as_slice()).unwrap();
         assert_eq!(cmdargs.0.len(), 0);
 
         // parameters with arguments are inserted as key value pairs
@@ -161,7 +186,7 @@ mod tests {
             String::from("-Critical"),
             String::from("1"),
         ];
-        let cmdargs = CommandArguments::from(args.as_slice());
+        let cmdargs = CommandArguments::try_from(args.as_slice()).unwrap();
         assert_eq!(cmdargs.0.len(), 2);
         assert_eq!(
             cmdargs.0.get("Warning").unwrap(),
@@ -180,7 +205,7 @@ mod tests {
             String::from("-Critical"),
             String::from("1"),
         ];
-        let cmdargs = CommandArguments::from(args.as_slice());
+        let cmdargs = CommandArguments::try_from(args.as_slice()).unwrap();
         assert_eq!(cmdargs.0.len(), 3);
         assert_eq!(
             cmdargs.0.get("Warning").unwrap(),
