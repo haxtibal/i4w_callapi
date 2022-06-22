@@ -1,3 +1,9 @@
+# 0.2.1
+
+Bug fixes
+- #9 Fix a bug where negative numbers and thresholds were interpreted as switch arguments
+- Update dependencies to fix known security issues
+
 # 0.2.0
 
 Features

@@ -3,7 +3,7 @@ use clap::{value_t, App, AppSettings, Arg};
 fn parser<'a, 'b>() -> App<'a, 'b> {
     App::new("call_api_check")
         .about("Forward check plugin invocations to icinga-powershell-restapi daemon.")
-        .version("0.2.0")
+        .version("0.2.1")
         .setting(AppSettings::TrailingVarArg)
         .arg(
             Arg::with_name("host")
