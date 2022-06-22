@@ -42,54 +42,18 @@ pub struct CheckerResult {
 pub struct CommandArguments(IndexMap<String, ps::CliArgument>);
 
 impl std::convert::TryFrom<&[String]> for CommandArguments {
-    type Error = CommandArgumentsError;
+    type Error = ps::ParameterBinderError;
 
     fn try_from(args: &[String]) -> Result<Self, Self::Error> {
         let mut command_map: IndexMap<String, ps::CliArgument> = IndexMap::new();
-        let mut arg_value;
-
-        for idx in 0..args.len() {
-            if args[idx].starts_with('-') {
-                if idx + 1 < args.len() {
-                    let next_value = &args[idx + 1];
-                    if next_value.starts_with('-') {
-                        arg_value = ps::CliArgument::Bool(true);
-                    } else {
-                        arg_value =
-                            ps::from_str(next_value).map_err(|e| CommandArgumentsError {
-                                failed_arg: args[idx].clone(),
-                                reason: e,
-                            })?;
-                    }
-                } else {
-                    arg_value = ps::CliArgument::Bool(true);
-                }
-                command_map.insert(args[idx].replace("-", ""), arg_value);
-            } else {
-                continue;
-            }
+        let param_binder = ps::ParameterBinder::new(args);
+        for params in param_binder {
+            let (param_name, param_value) = params?;
+            command_map.insert(param_name, param_value);
         }
         Ok(CommandArguments(command_map))
     }
 }
-
-#[derive(Debug)]
-pub struct CommandArgumentsError {
-    failed_arg: String,
-    reason: ps::Error,
-}
-
-impl std::fmt::Display for CommandArgumentsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "invalid value for argument '{}' ({})",
-            self.failed_arg, self.reason
-        )
-    }
-}
-
-impl std::error::Error for CommandArgumentsError {}
 
 impl Perfdata {
     fn valid(&self) -> bool {
@@ -147,7 +111,7 @@ impl IcingaTermination for CheckerResult {
 #[cfg(test)]
 mod tests {
     use super::{Argument, CheckerResult, CommandArguments, EmptyObject, Exitcode, Perfdata};
-    use crate::ps::{CliArgument, Number};
+    use crate::ps::{CliArgument, Error, Number};
     use serde_json;
     use std::collections::HashMap;
     use std::convert::{TryFrom, TryInto};
@@ -176,8 +140,8 @@ mod tests {
             String::from("bar"),
             String::from("baz"),
         ];
-        let cmdargs = CommandArguments::try_from(args.as_slice()).unwrap();
-        assert_eq!(cmdargs.0.len(), 0);
+        let err = CommandArguments::try_from(args.as_slice()).unwrap_err();
+        assert_eq!(err.reason, Error::ParameterBinder);
 
         // parameters with arguments are inserted as key value pairs
         let args = vec![
