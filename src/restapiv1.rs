@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_body() {
-        let data = r#"{"Invoke-Foo":{"exitcode":0,"checkresult":"[OK] Check package \"Bar\"","perfdata":"\u0027baz\u0027=158;; "}}"#;
+        let data = r#"{"Invoke-Foo":{"exitcode":0,"checkresult":"[OK] Check package \"Bar\"","perfdata":"\u0027baz\u0027=158;;"}}"#;
         let value: HashMap<String, CheckerResult> = serde_json::from_str(data).unwrap();
         let inner_value = value.values().next().unwrap();
         assert_eq!(inner_value.exitcode, Exitcode::Executed(0));
@@ -202,13 +202,13 @@ mod tests {
         );
         assert_eq!(
             inner_value.perfdata,
-            Perfdata::Single(String::from("'baz'=158;; "))
+            Perfdata::Single(String::from("'baz'=158;;"))
         );
     }
 
     #[test]
     fn test_deserialize_checker_result() {
-        let data = r#"{"exitcode":0,"checkresult":"[OK] Check package \"Bar\"","perfdata":["\u0027baz\u0027=158;; ", "\u0027qux\u0027=158;; "]}"#;
+        let data = r#"{"exitcode":0,"checkresult":"[OK] Check package \"Bar\"","perfdata":["\u0027baz\u0027=158;;", "\u0027qux\u0027=158;;"]}"#;
         let value: CheckerResult = serde_json::from_str(data).unwrap();
         assert_eq!(value.exitcode, Exitcode::Executed(0));
         assert_eq!(
@@ -218,8 +218,8 @@ mod tests {
         assert_eq!(
             value.perfdata,
             Perfdata::Multiple(vec![
-                String::from("'baz'=158;; "),
-                String::from("'qux'=158;; ")
+                String::from("'baz'=158;;"),
+                String::from("'qux'=158;;")
             ])
         );
     }
@@ -231,5 +231,17 @@ mod tests {
         assert_eq!(value.exitcode, Exitcode::NotExecuted(EmptyObject::new()));
         assert_eq!(value.checkresult, "");
         assert_eq!(value.perfdata, Perfdata::None(EmptyObject::new()));
+    }
+
+    #[test]
+    fn test_format_perfdata() {
+        assert_eq!(
+            Perfdata::Multiple(vec![
+                String::from("'baz'=158;;"),
+                String::from("'qux'=158;;")
+            ])
+            .to_string(),
+            "'baz'=158;; 'qux'=158;;"
+        );
     }
 }
