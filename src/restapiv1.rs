@@ -72,7 +72,7 @@ impl fmt::Display for Perfdata {
                 write!(f, "{}", single_perfdata)
             }
             Perfdata::Multiple(multiple_perfdatas) => {
-                write!(f, "{}", multiple_perfdatas.join(""))
+                write!(f, "{}", multiple_perfdatas.join(" "))
             }
             _ => Ok(()),
         }
