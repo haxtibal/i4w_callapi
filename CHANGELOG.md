@@ -1,3 +1,8 @@
+# 0.2.2
+
+Bug fixes
+- #11 Fix missing whitespace in Performance Data string.
+  
 # 0.2.1
 
 Bug fixes
