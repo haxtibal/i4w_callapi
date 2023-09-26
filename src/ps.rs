@@ -52,11 +52,7 @@ impl Number {
                 return Some(Number::PosInt(unsigned));
             }
         }
-        if let Ok(float) = number.parse::<f64>() {
-            Some(Number::Float(float))
-        } else {
-            None
-        }
+        Some(Number::Float(number.parse::<f64>().ok()?))
     }
 }
 
@@ -106,15 +102,13 @@ impl<'a> Lexer<'a> {
 
     pub fn lex(mut self) -> Result<Vec<Token>> {
         while !self.input.is_empty() {
-            if let Err(error) = match self.state {
+            match self.state {
                 LexerState::Control => self.scan_control(),
                 LexerState::SingleQuote => self.scan_singlequote(),
                 LexerState::DoubleQuote => self.scan_doublequote(),
                 LexerState::MaybeArrayOp => self.scan_maybearrayop(),
                 LexerState::ParanthesesCmd => self.scan_parantheses_cmd(),
-            } {
-                return Err(error);
-            }
+            }?
         }
         self.store_buf_as_token();
         Ok(self.tokens)
@@ -157,68 +151,56 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_singlequote(&mut self) -> Result<()> {
-        if let Some(peeked_char) = self.input.chars().next() {
-            self.eat(1);
-            if peeked_char == '\'' {
-                self.store_buf_as_token();
-                self.state = LexerState::Control;
-            } else {
-                self.buf.push(peeked_char);
-            }
-            Ok(())
+        let peeked_char = self.input.chars().next().ok_or(Error::Lexer)?;
+        self.eat(1);
+        if peeked_char == '\'' {
+            self.store_buf_as_token();
+            self.state = LexerState::Control;
         } else {
-            Err(Error::Lexer)
+            self.buf.push(peeked_char);
         }
+        Ok(())
     }
 
     fn scan_doublequote(&mut self) -> Result<()> {
-        if let Some(peeked_char) = self.input.chars().next() {
-            self.eat(1);
-            if self.escaping {
-                self.buf.push(peeked_char);
-                self.escaping = false;
-            } else if peeked_char == '`' {
-                self.escaping = true;
-            } else if peeked_char == '"' {
-                self.store_buf_as_token();
-                self.state = LexerState::Control;
-            } else {
-                self.buf.push(peeked_char);
-            }
-            Ok(())
+        let peeked_char = self.input.chars().next().ok_or(Error::Lexer)?;
+        self.eat(1);
+        if self.escaping {
+            self.buf.push(peeked_char);
+            self.escaping = false;
+        } else if peeked_char == '`' {
+            self.escaping = true;
+        } else if peeked_char == '"' {
+            self.store_buf_as_token();
+            self.state = LexerState::Control;
         } else {
-            Err(Error::Lexer)
+            self.buf.push(peeked_char);
         }
+        Ok(())
     }
 
     fn scan_parantheses_cmd(&mut self) -> Result<()> {
-        if let Some(peeked_char) = self.input.chars().next() {
-            self.eat(1);
-            self.buf.push(peeked_char);
-            if peeked_char == ')' {
-                self.store_buf_as_token();
-                self.state = LexerState::Control;
-            }
-            Ok(())
-        } else {
-            Err(Error::Lexer)
+        let peeked_char = self.input.chars().next().ok_or(Error::Lexer)?;
+        self.eat(1);
+        self.buf.push(peeked_char);
+        if peeked_char == ')' {
+            self.store_buf_as_token();
+            self.state = LexerState::Control;
         }
+        Ok(())
     }
 
     fn scan_maybearrayop(&mut self) -> Result<()> {
-        if let Some(peeked_char) = self.input.chars().next() {
-            self.eat(1);
-            if peeked_char == '(' {
-                self.tokens.push(Token::ArrayOpBegin);
-            } else {
-                self.buf.push('@');
-                self.buf.push(peeked_char);
-            }
-            self.state = LexerState::Control;
-            Ok(())
+        let peeked_char = self.input.chars().next().ok_or(Error::Lexer)?;
+        self.eat(1);
+        if peeked_char == '(' {
+            self.tokens.push(Token::ArrayOpBegin);
         } else {
-            Err(Error::Lexer)
+            self.buf.push('@');
+            self.buf.push(peeked_char);
         }
+        self.state = LexerState::Control;
+        Ok(())
     }
 
     fn is_number(&self) -> bool {
